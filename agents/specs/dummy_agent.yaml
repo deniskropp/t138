@@ -1,0 +1,4 @@
+# agents/specs/dummy_agent.yaml
+name: DummyAgent
+role: Test Executor
+description: A simple agent for testing workflow execution.

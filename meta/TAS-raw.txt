@@ -1,0 +1,40 @@
+01. Load application configuration files (YAML/JSON) into a Pydantic Settings model.
+02. Validate configuration schema using Pydantic validators.
+03. Create Path Management utilities (get_root(), ensure_dir()).
+04. Implement Logging Setup (basic config, handlers, formatters).
+05. Add Logging Formatter Customization (colors, JSON).
+06. Develop File I/O Utilities (read/write text & binary, safe mode).
+07. Define Data Structure Definitions (Pydantic models & dataclasses) for: AgentSpec, TaskSpec, Artifact, Session, ExecutionContext.
+08. Build Prompt Management module: load prompt templates from prompts/ directory, expose get_prompt(name).
+09. Create Agent Specification Loading (parse YAML/JSON spec files into AgentSpec models).
+10. Design Agent Base class (abstract run(task: TaskSpec) -> AgentResponse).
+11. Implement Agent Discovery/Lookup (search registry by role, name).
+12. Write Agent Instantiation Factory (creates concrete Agent objects from AgentSpec).
+13. Develop LLM Provider Abstraction (interface LLMProvider with generate(prompt)).
+14. Build Model‑Specific LLM Wrappers (Gemini, Ollama, Kimi, Mistral) implementing LLMProvider.
+15. Create LLM Client Initialization (load API keys, endpoints, instantiate wrappers).
+16. Implement Prompt Template Loading (read raw prompt files, support Jinja2 rendering).
+17. Build Dynamic Prompt Updates (agents can modify own prompt via update_prompt).
+18. Develop Task Management core (TaskSpec, TaskQueue, status tracking).
+19. Implement Task Dependency Management (topological sort, detect cycles).
+20. Create Artifact Handling module (store, retrieve, version artifacts).
+21. Add Artifact Contextualization (provide prior artifacts to agents on demand).
+22. Design Execution Context (environment vars, runtime flags, current session).
+23. Construct Workflow State Management (state machine: INIT → RUNNING → COMPLETED / FAILED).
+24. Write Session Management (track a single run, persist logs, artifacts).
+25. Develop Bootstrap Process (sequence: Config → Logging → Path → DB → LLM → Agents → Workflow).
+26. Implement Workflow Orchestration Loop (iteration over rounds, fetch next tasks, dispatch agents).
+27. Create Task Dependency Management (prereq handling inside orchestration).
+28. Add Agent Output Structuring (standard JSON schema: status, output, artifacts).
+29. Build System Runtime Class (holds global state, registry, config, logger).
+30. Design CLI Parsing (argparse/typer: subcommands run, init, status).
+31. Write System Entry Point (main.py: parse CLI, instantiate SystemRuntime, start bootstrap).
+32. Define Database Schema for Persistent Artifacts, Sessions, and Agent Metadata.
+33. Generate SQL DDL for the schema (PostgreSQL dialect).
+34. Create migration script (CREATE TABLE …) and apply via psql or SQLAlchemy engine.
+35. Add Schema Validation for LLM Output (Pydantic models matching AgentResponse).
+36. Implement Error Handling & Logging (exception wrappers, retry policies).
+37. Add Response Format Handling (detect JSON vs plain text, deserialize accordingly).
+38. Write Plan Generation & Validation (orchestrator builds execution plan, validates DAG).
+39. Develop Documentation (README, Architecture Overview, API Reference, Deployment Guide).
+40. Finalize Artifact Packaging (zip source, generate checksum, publish to GitHub release).

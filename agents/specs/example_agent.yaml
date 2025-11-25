@@ -1,0 +1,4 @@
+# agents/specs/example_agent.yaml
+name: ExampleAgent
+role: Data Processor
+description: An agent responsible for processing incoming data.

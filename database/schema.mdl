@@ -1,0 +1,24 @@
+erDiagram
+    SESSIONS ||--o{ ARTIFACTS : "has"
+    SESSIONS {
+        UUID id PK
+        DATETIME start_time
+        DATETIME end_time NULL
+        TEXT status
+        TEXT logs
+    }
+    ARTIFACTS {
+        UUID id PK
+        UUID session_id FK
+        TEXT name
+        TEXT type
+        TEXT data_path
+        DATETIME created_at
+    }
+    AGENTSPECS {
+        UUID id PK
+        TEXT name UNIQUE
+        TEXT role
+        TEXT description
+        DATETIME created_at
+    }

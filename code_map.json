@@ -1,0 +1,181 @@
+{
+    "main.py": {
+        "purpose": "The main entry point of the application, handles CLI parsing and system initialization.",
+        "key_functions_classes": ["main"],
+        "cross_references": ["src/cli.py", "src/runtime.py", "src/bootstrap.py"]
+    },
+    "src/config.py": {
+        "purpose": "Application configuration management using Pydantic Settings.",
+        "key_functions_classes": ["Settings"],
+        "cross_references": []
+    },
+    "src/paths.py": {
+        "purpose": "Utility functions for managing file paths and directories.",
+        "key_functions_classes": ["get_root_dir", "ensure_dir"],
+        "cross_references": []
+    },
+    "src/logger.py": {
+        "purpose": "Application-wide logging setup and configuration.",
+        "key_functions_classes": ["setup_logging"],
+        "cross_references": ["src/paths.py"]
+    },
+    "src/file_io.py": {
+        "purpose": "Utility functions for file input/output operations.",
+        "key_functions_classes": ["read_file", "write_file"],
+        "cross_references": ["src/paths.py"]
+    },
+    "src/models.py": {
+        "purpose": "Pydantic models and dataclasses for core system entities and agent responses.",
+        "key_functions_classes": ["AgentSpec", "TaskSpec", "Artifact", "Session", "ExecutionContext", "AgentResponse"],
+        "cross_references": []
+    },
+    "src/prompt_manager.py": {
+        "purpose": "Manages loading and retrieval of prompt templates, including dynamic updates.",
+        "key_functions_classes": ["PromptManager"],
+        "cross_references": ["src/file_io.py", "src/paths.py"]
+    },
+    "src/agent_loader.py": {
+        "purpose": "Loads agent specifications from files into AgentSpec models.",
+        "key_functions_classes": ["load_agent_specs"],
+        "cross_references": ["src/models.py", "src/file_io.py"]
+    },
+    "src/agents/base.py": {
+        "purpose": "Defines the abstract base class for all agents.",
+        "key_functions_classes": ["Agent"],
+        "cross_references": ["src/models.py"]
+    },
+    "src/agents/registry.py": {
+        "purpose": "Manages registration and lookup of agent implementations.",
+        "key_functions_classes": ["AgentRegistry"],
+        "cross_references": ["src/agent_loader.py", "src/agents/base.py"]
+    },
+    "src/agents/factory.py": {
+        "purpose": "Factory for creating concrete agent instances from specifications.",
+        "key_functions_classes": ["AgentFactory"],
+        "cross_references": ["src/agents/registry.py", "src/models.py"]
+    },
+    "src/llms/provider.py": {
+        "purpose": "Defines the abstract interface for Large Language Model providers.",
+        "key_functions_classes": ["LLMProvider"],
+        "cross_references": []
+    },
+    "src/llms/gemini.py": {
+        "purpose": "LLM wrapper for Gemini models.",
+        "key_functions_classes": ["GeminiLLMProvider"],
+        "cross_references": ["src/llms/provider.py"]
+    },
+    "src/llms/ollama.py": {
+        "purpose": "LLM wrapper for Ollama models.",
+        "key_functions_classes": ["OllamaLLMProvider"],
+        "cross_references": ["src/llms/provider.py"]
+    },
+    "src/llms/kimi.py": {
+        "purpose": "LLM wrapper for Kimi models.",
+        "key_functions_classes": ["KimiLLMProvider"],
+        "cross_references": ["src/llms/provider.py"]
+    },
+    "src/llms/mistral.py": {
+        "purpose": "LLM wrapper for Mistral models.",
+        "key_functions_classes": ["MistralLLMProvider"],
+        "cross_references": ["src/llms/provider.py"]
+    },
+    "src/llms/client.py": {
+        "purpose": "Initializes and manages LLM client instances.",
+        "key_functions_classes": ["LLMClient"],
+        "cross_references": [
+            "src/config.py",
+            "src/llms/gemini.py",
+            "src/llms/ollama.py",
+            "src/llms/kimi.py",
+            "src/llms/mistral.py"
+        ]
+    },
+    "src/prompt_templates.py": {
+        "purpose": "Loads and renders prompt templates, supporting Jinja2.",
+        "key_functions_classes": ["load_template", "render_template"],
+        "cross_references": ["src/file_io.py"]
+    },
+    "src/task_manager.py": {
+        "purpose": "Core module for managing tasks, queues, and status.",
+        "key_functions_classes": ["TaskQueue"],
+        "cross_references": ["src/models.py"]
+    },
+    "src/task_dependencies.py": {
+        "purpose": "Manages task dependencies, including topological sorting and cycle detection.",
+        "key_functions_classes": ["topological_sort", "detect_cycles"],
+        "cross_references": ["src/models.py"]
+    },
+    "src/artifacts.py": {
+        "purpose": "Manages the storage, retrieval, and versioning of artifacts.",
+        "key_functions_classes": ["ArtifactManager"],
+        "cross_references": ["src/models.py", "src/file_io.py", "src/paths.py"]
+    },
+    "src/context.py": {
+        "purpose": "Manages the execution context, including environment variables and session data.",
+        "key_functions_classes": ["ContextManager"],
+        "cross_references": ["src/models.py", "src/paths.py"]
+    },
+    "src/workflow/state.py": {
+        "purpose": "Manages the state transitions of workflows.",
+        "key_functions_classes": ["WorkflowState", "WorkflowStateMachine"],
+        "cross_references": ["src/models.py"]
+    },
+    "src/session_manager.py": {
+        "purpose": "Manages individual session runs, persisting logs and artifacts.",
+        "key_functions_classes": ["SessionManager"],
+        "cross_references": ["src/models.py", "src/workflow/state.py", "src/artifacts.py"]
+    },
+    "src/bootstrap.py": {
+        "purpose": "Initializes and configures the entire system.",
+        "key_functions_classes": ["bootstrap_system"],
+        "cross_references": [
+            "src/config.py",
+            "src/paths.py",
+            "src/logger.py",
+            "src/llms/client.py",
+            "src/agents/registry.py",
+            "src/session_manager.py",
+            "src/workflow/state.py"
+        ]
+    },
+    "src/orchestrator.py": {
+        "purpose": "Manages the main workflow orchestration loop, fetching and dispatching tasks.",
+        "key_functions_classes": ["Orchestrator"],
+        "cross_references": [
+            "src/task_manager.py",
+            "src/agents/factory.py",
+            "src/workflow/state.py",
+            "src/models.py"
+        ]
+    },
+    "src/runtime.py": {
+        "purpose": "Central class holding global system state, registries, and core components.",
+        "key_functions_classes": ["SystemRuntime"],
+        "cross_references": [
+            "src/config.py",
+            "src/agents/registry.py",
+            "src/session_manager.py",
+            "src/logger.py"
+        ]
+    },
+    "src/cli.py": {
+        "purpose": "Defines and parses command-line interface arguments and subcommands.",
+        "key_functions_classes": ["main_cli"],
+        "cross_references": ["src/paths.py", "src/logger.py"]
+    },
+    "src/error_handling.py": {
+        "purpose": "Implements application-wide error handling, including exception wrappers and retry mechanisms.",
+        "key_functions_classes": ["handle_exception", "retry_policy"],
+        "cross_references": ["src/logger.py"]
+    },
+    "src/response_parser.py": {
+        "purpose": "Handles parsing and deserialization of various response formats (e.g., JSON, plain text).",
+        "key_functions_classes": ["parse_response"],
+        "cross_references": ["src/models.py"]
+    },
+    "src/workflow/planner.py": {
+        "purpose": "Generates and validates workflow execution plans.",
+        "key_functions_classes": ["WorkflowPlanner"],
+        "cross_references": ["src/models.py", "src/task_dependencies.py"]
+    }
+}

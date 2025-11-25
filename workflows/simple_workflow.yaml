@@ -1,0 +1,35 @@
+# workflows/simple_workflow.yaml
+name: SimpleWorkflow
+description: A basic workflow demonstrating task execution and dependencies.
+tasks:
+  - id: task_a
+    name: First Task
+    description: This is the first task in the workflow.
+    agent_name: DummyAgent
+    input_data:
+      message: Hello from Task A
+    dependencies: []
+
+  - id: task_b
+    name: Dependent Task
+    description: This task depends on Task A.
+    agent_name: DummyAgent
+    input_data:
+      message: Hello from Task B, after A
+    dependencies: ["task_a"]
+
+  - id: task_c
+    name: Another Independent Task
+    description: This task runs in parallel with Task B.
+    agent_name: DummyAgent
+    input_data:
+      message: Hello from Task C
+    dependencies: ["task_a"]
+
+  - id: task_d
+    name: Final Task
+    description: This task depends on both Task B and Task C.
+    agent_name: DummyAgent
+    input_data:
+      message: Hello from Task D, after B and C
+    dependencies: ["task_b", "task_c"]
