@@ -1,3 +1,7 @@
+## Getting Started
+
+For instructions on how to install and run the framework, please see the [README.md](README.md) file.
+
 ## Agent Framework: High-Level Architectural Overview
 
 The agent framework is designed with a modular architecture, built upon clearly defined [Design Principles](#design-principles). Its core components and their interactions facilitate the creation, management, and execution of agent-based workflows. For definitions of key terms, please refer to the [Glossary](#glossary).
@@ -677,6 +681,8 @@ print("All tasks processed.")
 ```
 
 ## Contribution Guidelines
+
+For more detailed contribution guidelines, please see the [CONTRIBUTING.md](CONTRIBUTING.md) file.
 
 The agent framework is designed for extensibility and welcomes contributions. This section provides a high-level overview of how different components can be extended or added.
 
