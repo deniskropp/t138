@@ -1,1 +1,0 @@
-Log for task task_d: DummyAgent processed data.
