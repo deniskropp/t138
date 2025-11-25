@@ -1,6 +1,25 @@
 ## Agent Framework: High-Level Architectural Overview
 
-The agent framework is designed with a modular architecture to facilitate the creation, management, and execution of agent-based workflows. The core components and their interactions are detailed below:
+The agent framework is designed with a modular architecture, built upon clearly defined [Design Principles](#design-principles). Its core components and their interactions facilitate the creation, management, and execution of agent-based workflows. For definitions of key terms, please refer to the [Glossary](#glossary).
+
+### Glossary
+
+-   **Agent**: An autonomous entity within the framework responsible for executing specific tasks. Agents receive a `TaskSpec`, process it, and return an `AgentResponse` that includes output data and generated `Artifacts`.
+-   **Task**: A discrete unit of work within a workflow, defined by a `TaskSpec`. Tasks are assigned to agents and can have dependencies on other tasks.
+-   **Workflow**: A predefined sequence or graph of interconnected tasks that achieve a larger objective. Workflows are executed by the `Orchestrator`.
+-   **Artifact**: A piece of data, such as a file, report, or structured output, produced or consumed by an agent during task execution. Artifacts are managed by the `ArtifactManager` and associated with a `Session`.
+-   **Session**: Represents a single execution run of a workflow. It tracks the workflow's lifecycle, including start/end times, status, logs, and all associated artifacts.
+
+### Design Principles
+
+The agent framework is built upon several core design principles to ensure its robustness, flexibility, and maintainability:
+
+-   **Modularity**: Components are designed to be independent and self-contained, allowing for easier development, testing, and replacement.
+-   **Extensibility**: The framework is designed to be easily extended, enabling the addition of new agents, LLM providers, and workflow types without significant modifications to existing code.
+-   **Separation of Concerns**: Each module and class has a clear, single responsibility, reducing complexity and improving code clarity.
+-   **Configuration-Driven**: Key aspects of the framework, such as LLM providers and agent specifications, are configurable, promoting adaptability and reducing hard-coding.
+-   **State Management**: Workflow and session states are explicitly managed through dedicated components, providing clear visibility and control over execution.
+-   **Type Safety**: Utilizing Pydantic models for core data structures ensures data consistency and validation across the system.
 
 ### 1. Initialization and Configuration (`bootstrap.py`, `config.py`, `logger.py`, `paths.py`)
 
@@ -47,17 +66,43 @@ The agent framework is designed with a modular architecture to facilitate the cr
 
 ### Key Interaction Flows:
 
-1.  **Workflow Execution**: `main.py` -> `bootstrap_system()` -> `cli.py` (parses command) -> `workflow_loader.load_workflow_from_file()` -> `Orchestrator.run_workflow()` -> `task_manager.task_queue` & `agents/factory.AgentFactory` (using `agents/registry.AgentRegistry`) -> Agent execution -> `session_manager.add_artifact()` / `session_manager.add_log_entry()` -> `workflow/state.WorkflowStateMachine` updates.
-2.  **Agent Loading**: `bootstrap.py` calls `agents/registry.AgentRegistry._load_initial_agent_specs()` which uses `agent_loader.load_agent_specs()`.
-3.  **LLM Interaction**: `Orchestrator` or specific agents might use `llms.client.llm_client.get_provider()` to obtain an LLM provider and call its `generate` method.
+1.  **Workflow Execution**: This flow outlines the primary lifecycle of how a workflow is initiated and processed within the framework.
+    -   `main.py` serves as the application's entry point, initiating the system.
+    -   `bootstrap_system()` (from `bootstrap.py`) performs essential setup, ensuring configurations are loaded, logging is ready, and core components like LLM clients and the agent registry are initialized.
+    -   `cli.py` parses user commands, typically including the specification of a workflow to be executed.
+    -   `workflow_loader.load_workflow_from_file()` reads the workflow definition (e.g., from a YAML file) and translates it into a structured list of `TaskSpec` objects.
+    -   `Orchestrator.run_workflow()` takes this list of tasks. It first uses `task_dependencies` to sort tasks topologically, ensuring that prerequisites are met before a task is attempted.
+    -   The `Orchestrator` then iterates through the sorted tasks, dispatching each to an agent. This involves:
+        -   Retrieving the appropriate agent class from `agents/registry.AgentRegistry`.
+        -   Instantiating the agent via `agents/factory.AgentFactory`.
+        -   Calling the agent's `run` method with the `TaskSpec`.
+    -   During agent execution, `session_manager.add_artifact()` and `session_manager.add_log_entry()` are used to record outputs and significant events, associating them with the current session.
+    -   The `workflow/state.WorkflowStateMachine` continuously updates the overall workflow status (e.g., from `RUNNING` to `COMPLETED` or `FAILED`) based on task outcomes.
 
-This architecture emphasizes separation of concerns, making the framework extensible and maintainable.
+2.  **Agent Loading**: This flow describes how agent specifications are discovered, loaded, and made available for instantiation.
+    -   `bootstrap.py` initiates this process by calling `agents/registry.AgentRegistry._load_initial_agent_specs()`.
+    -   This method, in turn, utilizes `agent_loader.load_agent_specs()`.
+    -   `agent_loader.load_agent_specs()` scans a predefined directory (e.g., `agents/specs`) for agent definition files (YAML, JSON). It parses these files into `AgentSpec` models, validating their structure.
+    -   The `AgentRegistry` then registers these `AgentSpec` objects and also registers concrete Python agent classes (like `DummyAgent`) that implement the `Agent` base class. This centralizes all agent-related metadata and implementations.
+
+3.  **LLM Interaction**: This flow details how the framework integrates with and utilizes Large Language Models.
+    -   The `Orchestrator` or individual agents, when they require LLM capabilities, interact with `llms.client.llm_client`.
+    -   They call `llms.client.llm_client.get_provider(name: str)` to retrieve an initialized instance of a specific LLM provider (e.g., 'gemini', 'ollama'), based on configurations in `config.py`.
+    -   The retrieved LLM provider (an instance of a class implementing `llms/provider.py::LLMProvider`) exposes a `generate(prompt: str)` method.
+    -   The agent or orchestrator then calls this `generate` method with a constructed prompt, receiving the LLM's text response.
+    -   The `bootstrap.py` module plays a crucial role by calling `llm_client._initialize_providers()` early in the system startup, ensuring that all configured LLM providers are ready for use.
 
 ## `models.py` - Core Data Structures
 
+### Purpose
+
 The `src/models.py` module defines the fundamental data structures used throughout the agent framework. These structures, implemented using Pydantic models, ensure data consistency and validation across different components.
 
-### Key Models:
+### Core Components
+
+The `models.py` module primarily consists of Pydantic classes that serve as data transfer objects (DTOs) and define the schema for various entities within the framework.
+
+### Key Models (Core Components)
 
 -   `AgentSpec`: Represents the specification for an agent, including its `name`, `role`, and a brief `description`.
 -   `TaskSpec`: Defines a single task within a workflow. It includes a unique `id`, `name`, `description`, the `agent_name` responsible for executing it, any `input_data` required, and a list of `dependencies` (other task IDs it relies on).
@@ -66,37 +111,45 @@ The `src/models.py` module defines the fundamental data structures used througho
 -   `ExecutionContext`: Holds the runtime context for an operation, such as the `session_id`, environment variables (`env_vars`), and other runtime flags (`runtime_flags`).
 -   `AgentResponse`: Represents the output returned by an agent after executing a task. It includes a `status` (e.g., 'completed', 'failed'), any processed `output` data, and a list of `artifacts` produced.
 
-These models provide a standardized way to represent and exchange information between different parts of the agent framework, ensuring type safety and clarity.
+### Interactions
+
+These models are central to data exchange and validation across almost all components of the framework, including:
+-   `agent_loader.py` (parsing `AgentSpec`)
+-   `orchestrator.py` and `task_manager.py` (handling `TaskSpec` and `AgentResponse`)
+-   `session_manager.py` and `artifacts.py` (managing `Session` and `Artifact` objects)
+-   LLM integrations (potentially using `AgentResponse` for structured outputs).
+
+They provide a standardized way to represent and exchange information between different parts of the agent framework, ensuring type safety and clarity.
 
 # Configuration (`config.py`)
 
+### Purpose
+
 The `config.py` module is responsible for managing the application's configuration settings. It utilizes the `pydantic-settings` library to load settings from environment variables and a `.env` file, providing a robust and flexible way to configure the agent framework.
 
-## Settings Class
+### Core Components
 
 The core of this module is the `Settings` class, which inherits from `pydantic_settings.BaseSettings`. This class defines the structure and types of all configuration parameters.
 
-### Key Configuration Parameters:
+#### Key Configuration Parameters
 
--   `APP_NAME`: (str) The name of the application. Defaults to "AgentFramework".
--   `LOG_LEVEL`: (str) The minimum severity level for log messages to be processed. Defaults to "INFO". Supported levels include DEBUG, INFO, WARNING, ERROR, CRITICAL.
--   `PROMPTS_DIR`: (str) The directory where prompt templates are stored. Defaults to "prompts".
--   `ARTIFACTS_DIR`: (str) The directory where generated artifacts are stored. Defaults to "artifacts".
+-   **Application Settings**:
+    -   `APP_NAME`: (str) The name of the application. Defaults to "AgentFramework".
+    -   `LOG_LEVEL`: (str) The minimum severity level for log messages to be processed. Defaults to "INFO". Supported levels include DEBUG, INFO, WARNING, ERROR, CRITICAL.
+    -   `PROMPTS_DIR`: (str) The directory where prompt templates are stored. Defaults to "prompts".
+    -   `ARTIFACTS_DIR`: (str) The directory where generated artifacts are stored. Defaults to "artifacts".
 
-### LLM Settings:
+-   **LLM Settings**: These settings configure the connection details and API keys for various Large Language Model (LLM) providers.
+    -   `GEMINI_API_KEY`: (Optional[str]) API key for the Gemini LLM. If not provided, the Gemini provider may not be initialized.
+    -   `GEMINI_ENDPOINT`: (str) The API endpoint URL for Gemini. Defaults to "https://api.gemini.com/v1".
+    -   `OLLAMA_HOST`: (str) The host address for the Ollama service. Defaults to "http://localhost:11434".
+    -   `KIMI_API_KEY`: (Optional[str]) API key for the Kimi LLM. If not provided, the Kimi provider may not be initialized.
+    -   `KIMI_ENDPOINT`: (str) The API endpoint URL for Kimi. Defaults to "https://api.kimi.ai/v1".
+    -   `MISTRAL_API_KEY`: (Optional[str]) API key for the Mistral LLM. If not provided, the Mistral provider may not be initialized.
+    -   `MISTRAL_ENDPOINT`: (str) The API endpoint URL for Mistral. Defaults to "https://api.mistral.ai/v1".
+    -   `ACTIVE_LLM_PROVIDERS`: (str) A comma-separated string specifying which LLM providers should be activated. Example: "gemini,ollama".
 
-These settings configure the connection details and API keys for various Large Language Model (LLM) providers.
-
--   `GEMINI_API_KEY`: (Optional[str]) API key for the Gemini LLM. If not provided, the Gemini provider may not be initialized.
--   `GEMINI_ENDPOINT`: (str) The API endpoint URL for Gemini. Defaults to "https://api.gemini.com/v1".
--   `OLLAMA_HOST`: (str) The host address for the Ollama service. Defaults to "http://localhost:11434".
--   `KIMI_API_KEY`: (Optional[str]) API key for the Kimi LLM. If not provided, the Kimi provider may not be initialized.
--   `KIMI_ENDPOINT`: (str) The API endpoint URL for Kimi. Defaults to "https://api.kimi.ai/v1".
--   `MISTRAL_API_KEY`: (Optional[str]) API key for the Mistral LLM. If not provided, the Mistral provider may not be initialized.
--   `MISTRAL_ENDPOINT`: (str) The API endpoint URL for Mistral. Defaults to "https://api.mistral.ai/v1".
--   `ACTIVE_LLM_PROVIDERS`: (str) A comma-separated string specifying which LLM providers should be activated. Example: "gemini,ollama".
-
-## Loading Configuration
+### Loading Configuration (Key Methods/Mechanism)
 
 Configuration is loaded automatically when the `Settings` class is instantiated, typically during system bootstrap. It prioritizes environment variables over values defined in a `.env` file, which in turn overrides the default values set in the class.
 
@@ -119,7 +172,15 @@ Configuration is loaded automatically when the `Settings` class is instantiated,
 
 *Note: The actual values for API keys and endpoints will depend on your environment setup.*
 
-## Usage
+### Interactions
+
+The `config.py` module is a foundational component that is implicitly or explicitly used by almost all other modules requiring application-wide settings.
+-   `bootstrap.py`: Initiates the loading of configurations at system startup.
+-   `logger.py`: Uses `settings.LOG_LEVEL` to configure logging verbosity.
+-   `paths.py`: May use directory settings like `PROMPTS_DIR` and `ARTIFACTS_DIR`.
+-   `llms/client.py`: Uses various `_API_KEY` and `_ENDPOINT` settings to initialize LLM providers.
+
+### Usage
 
 An instance of the `Settings` class, named `settings`, is exported and can be imported and used throughout the application to access configuration values.
 
@@ -134,17 +195,40 @@ if settings.GEMINI_API_KEY:
 
 ## `logger.py`: Logging Setup and Configuration
 
+### Purpose
+
 The `logger.py` module is responsible for establishing and configuring the application's logging system. It ensures that logs are captured, formatted, and directed to appropriate destinations, such as the console and log files.
 
-### Key Components:
+### Core Components
 
--   `ColoredFormatter`: Extends `logging.Formatter` to add color-coding to log messages based on their severity level (e.g., red for ERROR, yellow for WARNING, green for INFO). This enhances readability of console output. It overrides the `format` method to prepend ANSI escape codes for colors before the standard log message and reset them afterward.
--   `JsonFormatter`: Extends `logging.Formatter` to format log records as JSON objects. This is useful for structured logging, enabling easier parsing and analysis by log aggregation systems. It overrides the `format` method to create a dictionary representation of the log record and then serializes it into a JSON string.
--   `setup_logging()` Function: The main function that orchestrates the entire logging setup. It retrieves the desired log level from `settings.LOG_LEVEL`, ensures the log directory (`logs/`) exists, creates and configures handlers for console output (using `ColoredFormatter`), and for file output (`app.log` with standard format and `app.json` with `JsonFormatter`). All configured handlers are added to the root logger.
+-   `ColoredFormatter`: Extends `logging.Formatter` to add color-coding to log messages based on their severity level (e.g., red for ERROR, yellow for WARNING, green for INFO).
+-   `JsonFormatter`: Extends `logging.Formatter` to format log records as JSON objects, useful for structured logging and analysis.
 
-### How it's Used:
+### Key Methods
 
-The `setup_logging()` function is called early in the application's lifecycle, typically within `bootstrap.py`, to ensure that all subsequent logging messages from any module are captured and processed according to this configuration.
+-   `ColoredFormatter.format(record)`: Overrides the base `format` method to prepend ANSI escape codes for colors before the standard log message and reset them afterward.
+-   `JsonFormatter.format(record)`: Overrides the base `format` method to create a dictionary representation of the log record and then serializes it into a JSON string.
+-   `setup_logging()`: The main function that orchestrates the entire logging setup. It retrieves the desired log level from `settings.LOG_LEVEL`, ensures the log directory (`logs/`) exists, and configures handlers for console output (using `ColoredFormatter`) and file output (`app.log` with standard format and `app.json` with `JsonFormatter`). All configured handlers are added to the root logger.
+
+### Interactions
+
+-   `config.py`: The `setup_logging()` function retrieves the desired `LOG_LEVEL` from `settings.LOG_LEVEL`.
+-   `bootstrap.py`: `setup_logging()` is called early in the application's lifecycle, typically within `bootstrap.py`, to ensure that all subsequent logging messages from any module are captured and processed according to this configuration.
+
+### Usage
+
+The `setup_logging()` function is invoked once during application initialization. After this setup, any module can use Python's standard `logging` module to emit log messages, and they will be processed by the configured handlers.
+
+```python
+# Example usage in another module after setup_logging() has been called:
+import logging
+
+logger = logging.getLogger(__name__)
+
+logger.info("This is an informational message.")
+logger.warning("This is a warning message.")
+logger.error("This is an error message.")
+```
 
 ## Module: src/artifacts.py
 
@@ -152,42 +236,50 @@ The `setup_logging()` function is called early in the application's lifecycle, t
 
 The `artifacts.py` module is responsible for managing the lifecycle of artifacts generated during workflow execution. This includes storing artifacts to disk, retrieving them when needed, and potentially providing mechanisms for contextualization based on previously generated artifacts.
 
-### Core Component: `ArtifactManager`
+### Core Components
 
-The central class in this module is `ArtifactManager`. It handles the file-based persistence of artifacts.
+The central class in this module is `ArtifactManager`, which handles the file-based persistence of artifacts.
 
-#### Initialization (`__init__`)
+### Key Methods of `ArtifactManager`
 
--   The `ArtifactManager` is initialized with an optional `artifact_dir` argument, which defaults to `'artifacts'` relative to the project root.
--   It ensures that this directory exists upon instantiation, creating it if necessary.
-
-#### Key Methods
-
--   `store_artifact(artifact: Artifact, session_id: str)`:
+-   **`__init__(self, artifact_dir: str = 'artifacts')`**:
+    -   Initializes the `ArtifactManager` with an optional `artifact_dir` argument, which defaults to `'artifacts'` relative to the project root.
+    -   Ensures that this directory exists upon instantiation, creating it if necessary.
+-   **`store_artifact(self, artifact: Artifact, session_id: str)`**:
     -   Takes an `Artifact` object and a `session_id` as input.
     -   Constructs a file path for the artifact, typically organized within a subdirectory named after the `session_id` inside the main artifact directory (e.g., `artifacts/<session_id>/<artifact_name>`).
     -   Ensures the target directory for the artifact exists.
-    -   Writes the artifact's data to the specified file path. Currently, it converts the data to a string using `str(artifact.data)` and uses `write_file`.
-
--   `retrieve_artifact(name: str, session_id: str) -> Optional[Artifact]`:
+    -   Writes the artifact's data to the specified file path (converts data to string using `str(artifact.data)`).
+-   **`retrieve_artifact(self, name: str, session_id: str) -> Optional[Artifact]`**:
     -   Takes the artifact's `name` and `session_id` to locate the file on disk.
     -   If the artifact file exists, it reads the content using `read_file`.
     -   It then constructs and returns an `Artifact` object.
     -   Returns `None` if the artifact file is not found.
-
--   `get_contextual_artifacts(session_id: str) -> Dict[str, Artifact]`:
+-   **`get_contextual_artifacts(self, session_id: str) -> Dict[str, Artifact]`**:
     -   This method is intended to provide artifacts that can be used for contextualizing future agent tasks.
     -   Currently, it's a placeholder that returns an empty dictionary.
-
-### Instance
-
-A singleton instance, `artifact_manager`, is created and exported for use throughout the application.
 
 ### Interactions
 
 -   The `ArtifactManager` is typically used by the `SessionManager` to store and retrieve artifacts associated with a specific session.
 -   It relies on `src.file_io` for underlying file read/write operations and `src.paths` for directory management.
 -   The `Artifact` model from `src.models` defines the structure of artifacts being managed.
+
+### Usage
+
+A singleton instance, `artifact_manager`, is created and exported for use throughout the application. It is primarily interacted with by the `SessionManager`.
+
+```python
+# Example usage within SessionManager (conceptual)
+from src.artifacts import artifact_manager
+from src.models import Artifact
+
+# ...
+# In a session management context
+# artifact_manager.store_artifact(my_artifact, current_session_id)
+# retrieved_artifact = artifact_manager.retrieve_artifact("my_artifact_name", current_session_id)
+# ...
+```
 
 ## Documentation for `session_manager.py`
 
@@ -197,21 +289,15 @@ The `session_manager.py` module is responsible for managing the lifecycle of ind
 
 ### Core Components
 
--   `SessionManager` Class: This is the primary class within the module. It handles:
-    -   Session Lifecycle: Starting new sessions with unique IDs and ending them, updating their status accordingly.
-    -   State Management: Interacting with the `WorkflowStateMachine` to synchronize session status with the overall workflow state.
-    -   Log Persistence: Appending log entries to the current session's log.
-    -   Artifact Management: Associating artifacts with the current session and coordinating with the `ArtifactManager` to store them persistently.
+The primary class within this module is `SessionManager`, which orchestrates session lifecycle, state management, log persistence, and artifact management.
 
--   `start_session()` Method: Initializes a new session with a unique UUID, sets the start time, initializes the status to `WorkflowState.INIT`, and associates it with the `workflow_state_machine`. It returns the newly created `Session` object.
+### Key Methods of `SessionManager`
 
--   `end_session(status: WorkflowState)` Method: Marks the current session as ended by setting the `end_time` and updating the session's status to the provided `WorkflowState`. It also logs the session end and resets the `_current_session` attribute.
-
--   `add_log_entry(entry: str)` Method: Appends a given log string to the `logs` list of the current session.
-
--   `add_artifact(artifact: Artifact)` Method: Adds an `Artifact` object to the session's artifact list and calls `artifact_manager.store_artifact` to save the artifact to disk, organizing it by session ID.
-
--   `get_current_session()` Method: Returns the currently active `Session` object.
+-   **`start_session(self) -> Session`**: Initializes a new session with a unique UUID, sets the start time, initializes the status to `WorkflowState.INIT`, and associates it with the `workflow_state_machine`. It returns the newly created `Session` object.
+-   **`end_session(self, status: WorkflowState)`**: Marks the current session as ended by setting the `end_time` and updating the session's status to the provided `WorkflowState`. It also logs the session end and resets the `_current_session` attribute.
+-   **`add_log_entry(self, entry: str)`**: Appends a given log string to the `logs` list of the current session.
+-   **`add_artifact(self, artifact: Artifact)`**: Adds an `Artifact` object to the session's artifact list and calls `artifact_manager.store_artifact` to save the artifact to disk, organizing it by session ID.
+-   **`get_current_session(self) -> Optional[Session]`**: Returns the currently active `Session` object, or `None` if no session is active.
 
 ### Interactions
 
@@ -220,29 +306,34 @@ The `session_manager.py` module is responsible for managing the lifecycle of ind
 -   `uuid`: Used to generate unique identifiers for each session.
 -   `datetime`: Used to timestamp session start and end times.
 -   `logging`: Used for logging information related to session management activities.
+-   `src.models.Session`: The `Session` model defines the data structure for a session managed by this module.
 
-### Session Data Model (`src.models.Session`)
-
-The `Session` model, defined in `src/models.py`, represents the data structure for a session.
-
-### Usage Example (Conceptual)
+### Usage Example
 
 ```python
 # In orchestrator.py or main execution flow:
+from src.session_manager import session_manager
+from src.workflow.state import WorkflowState
+from src.models import Artifact
+import logging
 
+logger = logging.getLogger(__name__)
+
+# Start a new session
 session = session_manager.start_session()
 logger.info(f"Starting workflow for session: {session.id}")
 
-# During task execution:
-response = agent.run(task)
-if response.artifacts:
-    for artifact in response.artifacts:
-        session_manager.add_artifact(artifact)
-        logger.info(f"Stored artifact: {artifact.name}")
+# During task execution, an agent might produce artifacts
+# response = agent.run(task)
+# if response.artifacts:
+#     for artifact in response.artifacts:
+#         session_manager.add_artifact(artifact)
+#         logger.info(f"Stored artifact: {artifact.name}")
 
-session_manager.add_log_entry(f"Task {task.id} completed.")
+# Add a log entry
+session_manager.add_log_entry(f"Task completed successfully.")
 
-# At the end of the workflow:
+# At the end of the workflow, end the session
 session_manager.end_session(status=WorkflowState.COMPLETED)
 ```
 
@@ -250,115 +341,142 @@ This module ensures that each run of the agent framework is properly tracked and
 
 ## LLM Integration Documentation
 
+### Purpose
+
 The agent framework supports integration with various Large Language Models (LLMs) through a modular provider-based system. This allows for flexibility in choosing and configuring different LLM services.
 
-### Core Components:
+### Core Components
 
--   `llms/provider.py`: This abstract base class defines the contract for all LLM providers. Any concrete LLM provider must implement the `generate(prompt: str) -> str` method, which is responsible for sending a prompt to the LLM and returning its text response.
--   `llms/client.py`: The `LLMClient` class acts as a central manager for LLM providers. It initializes available providers based on the `ACTIVE_LLM_PROVIDERS` setting in `config.py`. It dynamically instantiates specific provider classes (e.g., `GeminiLLMProvider`, `OllamaLLMProvider`) if their corresponding API keys or configurations are present. The `get_provider(name: str)` method allows other parts of the system to retrieve an initialized LLM provider instance by its name (e.g., 'gemini', 'ollama').
--   Specific Provider Implementations (`llms/gemini.py`, `llms/ollama.py`, `llms/kimi.py`, `llms/mistral.py`): These files contain concrete implementations of the `LLMProvider` interface for different LLM services. Each provider's `generate` method contains placeholder logic for making the actual API calls.
--   `config.py`: This file centralizes all configuration, including API keys, endpoints, and the list of active LLM providers (`ACTIVE_LLM_PROVIDERS`).
--   `bootstrap.py`: During system initialization, `bootstrap_system()` calls `llm_client._initialize_providers()` to ensure that the configured LLM clients are ready for use before the main application logic begins.
+-   `llms/provider.py`: Defines the abstract base class `LLMProvider`, which establishes the contract for all LLM providers.
+-   `llms/client.py`: The `LLMClient` class acts as a central manager for LLM providers, initializing them and providing access.
+-   Specific Provider Implementations (`llms/gemini.py`, `llms/ollama.py`, `llms/kimi.py`, `llms/mistral.py`): Concrete implementations of `LLMProvider` for different LLM services.
 
-### How LLMs are Used:
+### Key Methods
+
+-   **`LLMProvider.generate(prompt: str) -> str`**: (Abstract method) Responsible for sending a prompt to the specific LLM and returning its text response. Each concrete provider implements this method.
+-   **`LLMClient.get_provider(name: str) -> Optional[LLMProvider]`**: Allows other parts of the system to retrieve an initialized `LLMProvider` instance by its name (e.g., 'gemini', 'ollama').
+-   **`LLMClient._initialize_providers(self)`**: (Internal method) Initializes available providers based on the `ACTIVE_LLM_PROVIDERS` setting in `config.py`, dynamically instantiating specific provider classes.
+
+### Interactions
+
+-   `config.py`: Centralizes all configuration, including API keys, endpoints, and the list of active LLM providers (`ACTIVE_LLM_PROVIDERS`), which `LLMClient` uses during initialization.
+-   `bootstrap.py`: During system initialization, `bootstrap_system()` calls `llm_client._initialize_providers()` to ensure that the configured LLM clients are ready for use.
+-   `Orchestrator` or specific agents: These components leverage LLMs by obtaining a provider instance from `LLMClient` and calling its `generate` method.
+
+### Usage
 
 Agents within the framework can leverage LLMs by obtaining an LLM provider instance from the `LLMClient`, calling the `generate` method with a specific prompt, and processing the returned text response.
 
+```python
+# Example usage within an agent:
+from src.llms.client import llm_client
+from src.models import TaskSpec, AgentResponse
+
+class MyAgent:
+    def run(self, task: TaskSpec) -> AgentResponse:
+        llm_provider = llm_client.get_provider("gemini") # Or other configured LLM
+        if llm_provider:
+            prompt = f"Process the following task: {task.description}"
+            response_text = llm_provider.generate(prompt)
+            return AgentResponse(status="completed", output=response_text)
+        else:
+            return AgentResponse(status="failed", output="LLM provider not available.")
+
+```
+
 ## Agent Package Documentation
 
-This document details the `agents` package, which is central to the framework's ability to define, manage, and instantiate agent functionalities.
+### Purpose
 
-### 1. Agent Architecture (`src/agents/base.py`)
+This package is central to the framework's ability to define, manage, and instantiate agent functionalities, allowing for modular and extensible agent-based workflows.
 
-The foundation of the agent system is the abstract base class `Agent` located in `src/agents/base.py`. All concrete agent implementations must inherit from this class and implement the abstract `run` method.
+### Core Components
 
--   `Agent(ABC)`:
-    -   `__init__(self, name: str)`: Initializes the agent with a unique name.
-    -   `run(self, task: TaskSpec) -> AgentResponse`: An abstract method that must be implemented by subclasses. It takes a `TaskSpec` as input, processes it, and returns an `AgentResponse` detailing the outcome, any generated output data, and artifacts.
+-   **`Agent` Abstract Base Class (`src/agents/base.py`)**: The foundational class that all concrete agent implementations must inherit from.
+-   **`agent_loader.py`**: Responsible for discovering and parsing agent specifications into structured `AgentSpec` models.
+-   **`AgentRegistry` (`src/agents/registry.py`)**: A central hub for managing agent specifications and their corresponding Python class implementations.
+-   **`AgentFactory` (`src/agents/factory.py`)**: Provides a mechanism for creating agent instances based on their registered names.
+-   **`DummyAgent` (`src/agents/dummy_agent.py`)**: A basic implementation of the `Agent` base class for testing and demonstration.
 
-### 2. Agent Loading and Specification (`src/agent_loader.py`)
+### Key Methods
 
-Agent behavior and configuration are defined in specification files. The `src/agent_loader.py` module is responsible for reading these specifications and converting them into structured `AgentSpec` models.
+-   **`Agent.run(self, task: TaskSpec) -> AgentResponse`**: (Abstract method) Must be implemented by subclasses. It takes a `TaskSpec` as input, processes it, and returns an `AgentResponse` detailing the outcome, output data, and artifacts.
+-   **`agent_loader.load_agent_specs(spec_dir: str = "agents/specs") -> List[AgentSpec]`**: Scans a directory for agent specification files (`.yaml`, `.yml`, or `.json`), validates them, and returns a list of `AgentSpec` objects.
+-   **`AgentRegistry.register_agent_class(self, agent_class: Type[Agent])`**: Registers a concrete agent class, mapping its class name to the class itself.
+-   **`AgentRegistry.get_agent_class(self, name: str) -> Optional[Type[Agent]]`**: Retrieves an agent class by its registered name.
+-   **`AgentRegistry.get_agent_spec(self, name: str) -> Optional[AgentSpec]`**: Retrieves an agent specification by its name.
+-   **`AgentFactory.create_agent(self, agent_name: str) -> Agent`**: Looks up the `AgentSpec` and corresponding class in the `AgentRegistry`, then instantiates and returns the agent object.
 
--   `load_agent_specs(spec_dir: str = "agents/specs") -> List[AgentSpec]`:
-    -   Scans the specified directory (defaults to `agents/specs`).
-    -   Parses files ending in `.yaml`, `.yml`, or `.json`.
-    -   Validates the content against the `AgentSpec` model.
-    -   Returns a list of `AgentSpec` objects.
-    -   Handles file reading errors and parsing errors gracefully, logging warnings or errors.
+### Interactions
 
-### 3. Agent Registry (`src/agents/registry.py`)
+-   **Initialization (`bootstrap.py`)**: During system bootstrap, the `AgentRegistry` is populated with agent specifications loaded from files (`agent_loader.py`), and known concrete agent classes are registered (`registry.py`).
+-   **Task Execution (`Orchestrator`)**: When the `Orchestrator` needs to execute a task, it uses the `AgentFactory` to create an agent instance. The `AgentFactory` queries the `AgentRegistry` to find the correct agent class based on the `agent_name` in the `TaskSpec`.
 
-The `AgentRegistry` acts as a central hub for managing both agent specifications and their corresponding Python class implementations.
+### Usage
 
--   `AgentRegistry`:
-    -   `__init__(self)`: Initializes the registry by loading agent specifications using `agent_loader.load_agent_specs()` and registering known concrete agent classes (e.g., `DummyAgent`).
-    -   `register_agent_class(self, agent_class: Type[Agent])`: Registers a concrete agent class, mapping its class name to the class itself.
-    -   `get_agent_class(self, name: str) -> Optional[Type[Agent]]`: Retrieves an agent class by its registered name.
-    -   `get_agent_spec(self, name: str) -> Optional[AgentSpec]`: Retrieves an agent specification by its name.
-    -   `list_agent_specs(self) -> List[AgentSpec]`: Returns all loaded agent specifications.
+New agents can be easily added by defining their specifications in YAML/JSON files and implementing the `Agent` base class.
 
-### 4. Agent Factory (`src/agents/factory.py`)
+```python
+# Example: Creating and running an agent
+from src.agents.factory import AgentFactory
+from src.models import TaskSpec
 
-The `AgentFactory` provides a mechanism for creating agent instances based on their registered names.
-
--   `AgentFactory`:
-    -   `create_agent(self, agent_name: str) -> Agent`:
-        -   Looks up the `AgentSpec` in the `AgentRegistry`.
-        -   Retrieves the corresponding agent class from the registry.
-        -   Instantiates and returns the agent object.
-        -   Raises `ValueError` if the agent specification or class is not found.
-
-### 5. Dummy Agent Example (`src/agents/dummy_agent.py`)
-
-Provides a basic implementation of the `Agent` base class for testing and demonstration purposes.
-
--   `DummyAgent(Agent)`:
-    -   Inherits from `Agent`.
-    -   Implements the `run` method to simulate task processing, including potential failure conditions and artifact generation.
-    -   Logs its actions during initialization and task execution.
-
-### Summary of Agent Loading and Interaction:
-
-1.  **Initialization**: During system bootstrap (`bootstrap.py`), the `AgentRegistry` is populated with agent specifications loaded from files (`agent_loader.py`) and known concrete agent classes are registered (`registry.py`).
-2.  **Instantiation**: When the `Orchestrator` needs to execute a task, it uses the `AgentFactory` to create an agent instance.
-3.  **Execution**: The `AgentFactory` queries the `AgentRegistry` to find the correct agent class based on the `agent_name` specified in the `TaskSpec` and instantiates it.
-4.  **Task Processing**: The instantiated agent's `run` method is called with the `TaskSpec`, returning an `AgentResponse`.
-
-This modular approach allows for easy addition of new agents by simply defining their specifications and implementing the `Agent` base class.
+# Assuming an agent named "my_agent" is registered
+agent_instance = AgentFactory().create_agent("my_agent")
+task = TaskSpec(id="1", name="sample_task", description="Perform a sample operation.", agent_name="my_agent")
+response = agent_instance.run(task)
+print(f"Agent response status: {response.status}")
+```
 
 ### Module: src/prompt_manager.py
 
+### Purpose
+
 The `PromptManager` class is responsible for handling the loading, storage, and retrieval of prompt templates within the agent framework. It ensures that prompts are readily available for use by agents during their operations.
 
-### Core Functionality:
+### Core Components
 
--   **Initialization and Loading**:
-    -   When a `PromptManager` instance is created, it initializes a directory for prompt storage (defaulting to `settings.PROMPTS_DIR` or a specified path).
-    -   It automatically loads all `.txt` files from this directory. Each filename (without the extension) is treated as a prompt name, and the file content becomes the prompt's template.
-    -   Loaded prompts are stored in an in-memory dictionary (`self.prompts`) mapping prompt names to their content.
+The primary component is the `PromptManager` class itself, which maintains an in-memory dictionary of loaded prompt templates.
 
--   **Prompt Retrieval**:
-    -   The `get_prompt(name: str)` method allows any part of the system to retrieve the content of a specific prompt template by its name.
-    -   If a prompt with the given name is not found, it returns an empty string.
+### Key Methods of `PromptManager`
 
--   **Prompt Updates**:
-    -   The `update_prompt(name: str, new_content: str)` method enables dynamic updating of prompt templates in memory.
+-   **`__init__(self, prompt_dir: Optional[str] = None)`**:
+    -   Initializes a directory for prompt storage (defaulting to `settings.PROMPTS_DIR` or a specified path).
+    -   Automatically calls `load_prompts()` to populate the initial set of prompts.
+-   **`load_prompts(self)`**:
+    -   Scans the `prompt_dir` for `.txt` files.
+    -   Each filename (without extension) is treated as a prompt name, and its content becomes the prompt's template.
+    -   Stores loaded prompts in the `self.prompts` dictionary.
+-   **`get_prompt(self, name: str) -> str`**:
+    -   Allows retrieval of a specific prompt template by its name.
+    -   Returns an empty string if the prompt is not found.
+-   **`update_prompt(self, name: str, new_content: str)`**:
+    -   Enables dynamic updating of prompt templates in memory.
 
-### Usage:
+### Interactions
 
--   The `PromptManager` is typically instantiated once during system bootstrap (`bootstrap.py`) and made available globally.
--   Other modules or agents can then access prompt content through the singleton instance.
+-   `config.py`: Uses `settings.PROMPTS_DIR` to determine the default location for prompt template files.
+-   `bootstrap.py`: Typically instantiates `PromptManager` once during system bootstrap.
+-   Agents and other modules: Access prompt content through the singleton `prompt_manager` instance.
 
-### Key Components:
+### Usage
 
--   `prompt_dir`: The directory where prompt template files (`.txt`) are stored.
--   `prompts`: A dictionary (`Dict[str, str]`) holding the loaded prompt templates in memory.
--   `load_prompts()`: Method to scan the `prompt_dir` and populate the `prompts` dictionary.
--   `get_prompt(name)`: Retrieves a prompt by name.
--   `update_prompt(name, content)`: Updates a prompt in memory.
+The `PromptManager` is typically instantiated once during system bootstrap and made available globally. Other modules or agents can then access prompt content through this singleton instance.
 
-This module ensures a centralized and efficient way to manage prompt templates.
+```python
+# Example usage in an agent or another module:
+from src.prompt_manager import prompt_manager
+
+# Get a prompt by name
+my_prompt_template = prompt_manager.get_prompt("my_agent_instruction_prompt")
+
+if my_prompt_template:
+    # Use the template, e.g., with f-strings or a templating engine
+    formatted_prompt = f"Given the context: {context_data}, {my_prompt_template}"
+    print(formatted_prompt)
+else:
+    print("Prompt not found.")
+```
 
 ## `src/bootstrap.py` Module Documentation
 
@@ -366,9 +484,13 @@ This module ensures a centralized and efficient way to manage prompt templates.
 
 The `bootstrap.py` module is responsible for initializing and configuring the entire agent framework system upon application startup. It orchestrates a sequence of setup operations to ensure all necessary components are ready before the main application logic begins execution.
 
-### Key Functions
+### Core Components
 
--   `bootstrap_system()`: This is the primary function within the module. It executes a series of steps in a defined order:
+The primary core component is the `bootstrap_system()` function itself, which acts as the orchestrator for the initial setup steps.
+
+### Key Methods
+
+-   **`bootstrap_system()`**: This is the primary function within the module. It executes a series of steps in a defined order to set up the system:
     1.  **Configuration Loading**: Ensures application settings are loaded (implicitly via `src.config.settings`).
     2.  **Path Management**: Verifies and creates essential directories such as `logs`, `artifacts`, `prompts`, and `agents/specs` using utilities from `src.paths`.
     3.  **Logging Setup**: Configures the application-wide logging system by calling `src.logger.setup_logging()`.
@@ -376,58 +498,117 @@ The `bootstrap.py` module is responsible for initializing and configuring the en
     5.  **Agent Registry Population**: Loads agent specifications from their defined locations into the agent registry using `src.agents.registry.agent_registry._load_initial_agent_specs()`.
     6.  **Session Management Initialization**: Starts the initial session management process via `src.session_manager.session_manager.start_session()`.
 
-### Role in System Initialization
+### Interactions
 
-`bootstrap.py` acts as the entry point for system setup. It ensures that foundational elements like configuration, logging, LLM clients, agent definitions, and session management are correctly initialized and configured. This module guarantees that the framework is in a stable and ready state to process user requests or execute workflows.
+The `bootstrap.py` module interacts with many other core modules to perform its initialization duties:
+-   `src.config`: For loading application settings.
+-   `src.paths`: For directory management.
+-   `src.logger`: For setting up the logging system.
+-   `src.llms.client`: For initializing LLM providers.
+-   `src.agents.registry`: For populating the agent registry.
+-   `src.session_manager`: For starting the initial session.
+
+### Usage
+
+The `bootstrap_system()` function is typically called once at the very beginning of the application's execution (e.g., from `main.py`) to prepare the environment.
+
+```python
+# Example in main.py:
+from src.bootstrap import bootstrap_system
+import logging
+
+if __name__ == "__main__":
+    bootstrap_system()
+    logger = logging.getLogger(__name__)
+    logger.info("System successfully bootstrapped. Starting application logic...")
+    # ... rest of the application logic
+```
 
 ## Workflow Package Documentation
 
-The `workflow` package is central to managing the execution flow of agent tasks. It comprises two key components: the `planner` and the `state`.
+### Purpose
 
-### 1. `workflow/planner.py`
+The `workflow` package is central to managing the execution flow of agent tasks. It provides the essential logic for defining the order of operations and tracking the progress of an agent-based workflow.
 
--   **Purpose**: This module is responsible for generating and validating the execution plan for a workflow. It ensures that tasks can be executed in a logical order, respecting their dependencies.
--   **Key Class**: `WorkflowPlanner`
-    -   `generate_plan(tasks: List[TaskSpec]) -> List[TaskSpec]`: Takes a list of `TaskSpec` objects and returns a topologically sorted list, representing the execution order. It raises a `ValueError` if circular dependencies are detected among the tasks.
-    -   `validate_plan(plan: List[TaskSpec]) -> bool`: Validates an existing execution plan.
+### Core Components
 
-### 2. `workflow/state.py`
-
--   **Purpose**: This module manages the overall state of the workflow execution using a state machine pattern. It tracks whether the workflow is initializing, running, completed, or has failed.
--   **Key Components**:
+-   **`workflow/planner.py`**: This module is responsible for generating and validating the execution plan for a workflow, ensuring tasks can be executed in a logical order, respecting their dependencies.
+-   **`workflow/state.py`**: This module manages the overall state of the workflow execution using a state machine pattern, tracking whether the workflow is initializing, running, completed, or has failed.
     -   `WorkflowState` (Enum): Defines the possible states a workflow can be in: `INIT`, `RUNNING`, `COMPLETED`, `FAILED`.
-    -   `WorkflowStateMachine`: The class that implements the state machine logic.
-        -   `__init__(initial_state: WorkflowState = WorkflowState.INIT)`: Initializes the state machine with a starting state.
-        -   `set_session(session: Session)`: Associates the state machine with a `Session` object, allowing it to update the session's status.
-        -   `transition_to(new_state: WorkflowState)`: Changes the current state of the workflow to the `new_state`. It also updates the associated session's status if one is set.
-        -   `get_state() -> WorkflowState`: Returns the current state of the workflow.
 
-### Workflow Management Summary
+### Key Methods
 
-The `workflow` package provides the essential logic for defining the order of operations (`planner`) and tracking the progress of an agent-based workflow (`state`). The `WorkflowPlanner` ensures tasks are executable, while the `WorkflowStateMachine` provides visibility into the workflow's overall status.
+-   **`WorkflowPlanner.generate_plan(self, tasks: List[TaskSpec]) -> List[TaskSpec]`**: Takes a list of `TaskSpec` objects and returns a topologically sorted list, representing the execution order. It raises a `ValueError` if circular dependencies are detected.
+-   **`WorkflowPlanner.validate_plan(self, plan: List[TaskSpec]) -> bool`**: Validates an existing execution plan.
+-   **`WorkflowStateMachine(initial_state: WorkflowState = WorkflowState.INIT)`**: Initializes the state machine with a starting state.
+-   **`WorkflowStateMachine.set_session(self, session: Session)`**: Associates the state machine with a `Session` object, allowing it to update the session's status.
+-   **`WorkflowStateMachine.transition_to(self, new_state: WorkflowState)`**: Changes the current state of the workflow to the `new_state`, also updating the associated session's status if one is set.
+-   **`WorkflowStateMachine.get_state(self) -> WorkflowState`**: Returns the current state of the workflow.
+
+### Interactions
+
+-   `Orchestrator`: Utilizes `WorkflowPlanner` to get the execution plan and `WorkflowStateMachine` to manage and update the overall state of the workflow execution.
+-   `session_manager`: `WorkflowStateMachine` interacts with `Session` objects managed by the `session_manager` to synchronize status.
+-   `task_dependencies`: The `WorkflowPlanner` relies on `task_dependencies` for sorting tasks and detecting circular dependencies.
+
+### Usage
+
+The `WorkflowPlanner` is used early in the workflow execution process to determine the order of tasks, while the `WorkflowStateMachine` provides continuous visibility into the workflow's overall status throughout its lifecycle.
+
+```python
+# Example of WorkflowPlanner usage (conceptual)
+from src.workflow.planner import WorkflowPlanner
+from src.models import TaskSpec
+
+tasks_to_plan = [
+    TaskSpec(id="task_a", name="Task A", agent_name="agent_1"),
+    TaskSpec(id="task_b", name="Task B", agent_name="agent_2", dependencies=["task_a"]),
+]
+planner = WorkflowPlanner()
+planned_tasks = planner.generate_plan(tasks_to_plan)
+print(f"Planned execution order: {[task.id for task in planned_tasks]}")
+
+# Example of WorkflowStateMachine usage (conceptual)
+from src.workflow.state import WorkflowStateMachine, WorkflowState
+from src.session_manager import Session
+
+state_machine = WorkflowStateMachine()
+# session = Session(...) # Assume a session is created
+# state_machine.set_session(session)
+state_machine.transition_to(WorkflowState.RUNNING)
+print(f"Current workflow state: {state_machine.get_state()}")
+```
 
 ## Orchestrator Module Documentation (`orchestrator.py`)
 
+### Purpose
+
 The `Orchestrator` class is the central component responsible for managing and executing agent-based workflows. It orchestrates the flow of tasks, dispatches them to appropriate agents, and handles the overall workflow state.
 
-### Core Functionality
+### Core Components
 
--   **Workflow Execution (`run_workflow`)**: This method initiates and manages the entire workflow process. It takes a list of `TaskSpec` objects as input, validates and sorts them based on their dependencies using `task_dependencies`, and then processes them sequentially.
--   **Task Dispatching**: For each task, the `Orchestrator` uses the `AgentFactory` to create an instance of the specified agent. The `AgentFactory` is responsible for looking up and instantiating the correct agent class based on the `agent_name` specified in the `TaskSpec`. It then calls the agent's `run` method with the task details.
--   **State Management**: It interacts with the `WorkflowStateMachine` to transition the workflow through different states (e.g., RUNNING, COMPLETED, FAILED). It also coordinates with the `SessionManager` to log events and store artifacts generated during the workflow execution.
--   **Error Handling**: The `Orchestrator` includes robust error handling to catch exceptions during task execution or dependency resolution. Specifically, exceptions caught during agent execution lead to the task's status being marked as 'failed' and the workflow state transitioning to `FAILED`, and execution is halted.
+The primary component is the `Orchestrator` class, which encapsulates the logic for workflow execution.
 
-### Key Interactions
+### Key Methods
+
+-   **`run_workflow(self, tasks: List[TaskSpec])`**: This method initiates and manages the entire workflow process. It takes a list of `TaskSpec` objects, validates and sorts them based on their dependencies, and then processes them sequentially.
+    -   **Task Dispatching**: For each task, it uses the `AgentFactory` to create an instance of the specified agent, then calls the agent's `run` method with the task details.
+    -   **State Management**: Interacts with the `WorkflowStateMachine` to transition the workflow through different states (e.g., RUNNING, COMPLETED, FAILED).
+    -   **Error Handling**: Catches exceptions during task execution or dependency resolution, marking the task as 'failed' and transitioning the workflow state to `FAILED`, halting execution.
+
+### Interactions
 
 -   `AgentFactory`: Used to instantiate agent objects based on task specifications.
--   `task_queue` (from `task_manager.py`): Tasks are added to this queue after being sorted by dependencies. The orchestrator retrieves tasks from this queue.
--   `task_dependencies`: Utilized for validating task dependencies, detecting cycles, and performing topological sorting to ensure tasks are executed in the correct order.
+-   `task_manager.task_queue`: Tasks are added to this queue after being sorted by dependencies. The orchestrator retrieves tasks from this queue.
+-   `task_dependencies`: Utilized for validating task dependencies, detecting cycles, and performing topological sorting.
 -   `session_manager`: Records logs and artifacts associated with the current workflow session.
 -   `workflow_state_machine`: Manages and updates the overall state of the workflow execution.
 
-### Workflow Lifecycle
+### Usage (Workflow Lifecycle)
 
-1.  **Initialization**: The `run_workflow` method begins by setting the workflow state to `RUNNING` and populating the `task_queue` with topologically sorted tasks.
+The `run_workflow` method defines the complete lifecycle of a workflow execution:
+
+1.  **Initialization**: The method begins by setting the workflow state to `RUNNING` and populating the `task_manager.task_queue` with topologically sorted tasks.
 2.  **Task Processing Loop**: The orchestrator continuously retrieves tasks from the `task_queue`.
 3.  **Agent Invocation**: For each task, an agent is created and its `run` method is called.
 4.  **Response Handling**: The `AgentResponse` is processed. Task status is updated, and any generated artifacts are stored via the `session_manager`.
@@ -437,32 +618,92 @@ The `Orchestrator` class is the central component responsible for managing and e
 
 ## Task Manager (`task_manager.py`)
 
+### Purpose
+
 The `task_manager.py` module is responsible for managing the queue of tasks to be executed within the agent framework. It provides a centralized mechanism for adding tasks, retrieving the next available task, and updating the status of tasks as they progress through the workflow.
 
-### Core Component: `TaskQueue`
+### Core Components
 
-The primary component in this module is the `TaskQueue` class. It utilizes a `deque` (double-ended queue) from Python's `collections` module for efficient addition and removal of tasks from both ends, although in this implementation, tasks are processed in a First-In, First-Out (FIFO) manner.
+The primary component in this module is the `TaskQueue` class. It utilizes a `deque` (double-ended queue) from Python's `collections` module for efficient addition and removal of tasks.
 
-#### Key Methods:
+### Key Methods of `TaskQueue`
 
--   `add_task(self, task: TaskSpec)`:
+-   **`add_task(self, task: TaskSpec)`**:
     -   Appends a given `TaskSpec` object to the internal queue.
     -   Initializes the task's status to `'pending'` in the internal status dictionary.
-
--   `get_next_task(self) -> Optional[TaskSpec]`:
+-   **`get_next_task(self) -> Optional[TaskSpec]`**:
     -   Removes and returns the task at the front of the queue (the next task to be processed).
     -   If the queue is empty, it returns `None`.
     -   Updates the status of the retrieved task to `'in_progress'`.
-
--   `update_task_status(self, task_id: str, status: str)`:
+-   **`update_task_status(self, task_id: str, status: str)`**:
     -   Updates the status of a specific task, identified by its `task_id`, in the internal status dictionary.
     -   This is crucial for tracking the lifecycle of a task (e.g., from `'in_progress'` to `'completed'` or `'failed'`).
-
--   `get_task_status(self, task_id: str) -> Optional[str]`:
+-   **`get_task_status(self, task_id: str) -> Optional[str]`**:
     -   Retrieves and returns the current status of a task based on its `task_id`.
 
-### Usage within the Framework
+### Interactions
 
-The `TaskQueue` instance (`task_queue`) is typically used by the `Orchestrator`. The `Orchestrator` populates the queue with tasks (often after they have been topologically sorted to respect dependencies) and then repeatedly calls `get_next_task()` to fetch tasks for execution. As agents complete their work, the `Orchestrator` uses `update_task_status()` to reflect the outcome in the `TaskQueue`.
+-   `Orchestrator`: The `Orchestrator` is the primary consumer of the `TaskQueue`. It populates the queue with tasks (often after they have been topologically sorted) and then repeatedly calls `get_next_task()` to fetch tasks for execution.
+-   `TaskSpec` (from `src.models`): The `TaskQueue` manages `TaskSpec` objects.
 
-This module ensures that task execution order is managed correctly and that the state of each task is tracked throughout the workflow lifecycle.
+### Usage
+
+The `TaskQueue` instance (`task_queue`) is typically used by the `Orchestrator` to manage the order and state of tasks throughout the workflow lifecycle.
+
+```python
+# Example usage within the Orchestrator (conceptual)
+from src.task_manager import task_queue
+from src.models import TaskSpec
+
+# Assume tasks are sorted and ready
+sorted_tasks = [
+    TaskSpec(id="task_1", name="First Task", agent_name="agent_a"),
+    TaskSpec(id="task_2", name="Second Task", agent_name="agent_b"),
+]
+
+for task in sorted_tasks:
+    task_queue.add_task(task)
+
+while True:
+    next_task = task_queue.get_next_task()
+    if not next_task:
+        break
+    print(f"Processing task: {next_task.name} (ID: {next_task.id})")
+    # Simulate task execution and update status
+    # agent.run(next_task)
+    task_queue.update_task_status(next_task.id, "completed")
+
+print("All tasks processed.")
+```
+
+## Contribution Guidelines
+
+The agent framework is designed for extensibility and welcomes contributions. This section provides a high-level overview of how different components can be extended or added.
+
+### Adding New Agents
+
+To add a new agent to the framework:
+1.  **Create an Agent Specification**: Define the agent's `AgentSpec` in a YAML or JSON file within the `agents/specs/` directory. This specification includes the agent's name, role, and description.
+2.  **Implement the Agent Class**: Create a new Python class that inherits from `src/agents/base.py::Agent`. Implement the `run` method to define the agent's specific logic for processing a `TaskSpec` and returning an `AgentResponse`.
+3.  **Register the Agent Class**: Ensure your new agent class is registered with the `AgentRegistry` during system bootstrap (refer to `src/agents/registry.py` for examples).
+
+### Integrating New LLM Providers
+
+To integrate a new Large Language Model (LLM) provider:
+1.  **Implement `LLMProvider`**: Create a new Python class that inherits from `src/llms/provider.py::LLMProvider`. Implement the `generate` method to handle API calls to your new LLM service.
+2.  **Configure API Keys/Endpoints**: Add relevant API keys and endpoint URLs for your new LLM provider to `src/config.py::Settings` and the `.env` file.
+3.  **Update `LLMClient`**: Modify `src/llms/client.py` to initialize and manage your new LLM provider based on its configuration settings.
+4.  **Activate Provider**: Add the name of your new provider to the `ACTIVE_LLM_PROVIDERS` setting in your `.env` file.
+
+### Defining New Workflows
+
+New workflows can be defined by creating YAML files that specify a sequence of tasks and their dependencies. These workflow definitions are loaded by `workflow_loader.load_workflow_from_file()`.
+
+### General Contribution
+
+For any other contributions, such as bug fixes, feature enhancements, or improvements to existing modules, please follow the standard development practices:
+-   Fork the repository.
+-   Create a new branch for your changes.
+-   Write clear and concise commit messages.
+-   Ensure existing tests pass and add new tests for your changes if applicable.
+-   Submit a pull request.
