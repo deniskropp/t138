@@ -13,8 +13,8 @@ This project provides a framework for defining and running AI agent-based workfl
 
 1.  Clone the repository:
     ```bash
-    git clone <repository-url>
-    cd <repository-directory>
+    git clone https://github.com/deniskropp/t138.git
+    cd t138
     ```
 
 2.  Install the required dependencies:
@@ -66,6 +66,12 @@ We welcome contributions to this project! Please follow these steps:
     git push origin feature/your-feature-name
     ```
 6.  **Create a pull request** to the `main` branch of the original repository.
+
+## Canon
+
+Shared concepts (runtime kernel with `Result`/`Error`, `ArtifactStore` with `AddArtifact`/`GetArtifact`, `Orchestrator.AssignAgent`, Task-Agnostic Steps, role IDs, JSON schemas) are defined in [deniskropp/t333](https://github.com/deniskropp/t333) on `main`, the neutral source of truth. Only `canon/` there is normative (see [`canon/SPEC.md`](https://github.com/deniskropp/t333/blob/main/canon/SPEC.md)). This repo references t333 `main` without version pinning ([ADR-0005](https://github.com/deniskropp/t333/blob/main/docs/adr/0005-referenz-auf-main.md)). Repo-specific extensions use the `⫻x-t138/` namespace.
+
+The local `meta/TAS-*.md` files are a project-specific TAS list; the TAS shape and categories are defined by [`canon/tas.kl`](https://github.com/deniskropp/t333/blob/main/canon/tas.kl).
 
 ## License
 
